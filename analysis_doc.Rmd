@@ -1,55 +1,160 @@
 ---
-title: "Rossmann Sales Prediction"
+title: "Forecast sales using store, promotion, and competitor data"
 output: html_document
 ---
 
-# Description of source files
+# The Challenge
 
- - **Id**: an Id that represents a (Store, Date) duple within the test set
- - **Store**: a unique Id for each store
- - **Sales**: the turnover for any given day (this is what you are predicting)
- - **Customers**: the number of customers on a given day
- - **Open**: an indicator for whether the store was open: 0 = closed, 1 = open
- - **StateHoliday**: indicates a state holiday. Normally all stores, with few exceptions, are closed on state holidays. Note that all schools are closed on public holidays and weekends. a = public holiday, b = Easter holiday, c = Christmas, 0 = None
- - **SchoolHoliday**: indicates if the (Store, Date) was affected by the closure of public schools
- - **StoreType**: differentiates between 4 different store models: a, b, c, d
- - **Assortment**: describes an assortment level: a = basic, b = extra, c = extended
- - **CompetitionDistance**: distance in meters to the nearest competitor store
- - **CompetitionOpenSince[Month/Year]**: gives the approximate year and month of the time the nearest competitor was opened
- - **Promo**: indicates whether a store is running a promo on that day
- - **Promo2**: Promo2 is a continuing and consecutive promotion for some stores: 0 = store is not participating, 1 = store is participating
- - **Promo2Since[Year/Week]**: describes the year and calendar week when the store started participating in Promo2
- - **PromoInterval**: describes the consecutive intervals Promo2 is started, naming the months the promotion is started anew. E.g. "Feb,May,Aug,Nov" means each round starts in February, May, August, November of any given year for that store
+Rossmann operates over 3,000 drug stores in 7 European countries. Currently, Rossmann store managers are tasked with predicting their daily sales for up to six weeks in advance. Store sales are influenced by many factors, including promotions, competition, school and state holidays, seasonality, and locality. With thousands of individual managers predicting sales based on their unique circumstances, the accuracy of results can be quite varied.
+
+In their first Kaggle competition, Rossmann is challenging you to predict 6 weeks of daily sales for 1,115 stores located across Germany. Reliable sales forecasts enable store managers to create effective staff schedules that increase productivity and motivation. By helping Rossmann create a robust prediction model, you will help store managers stay focused on what’s most important to them: their customers and their teams! 
+
+# Data
+
+You are provided with historical sales data for 1,115 Rossmann stores. The task is to forecast the "Sales" column for the test set. Note that some stores in the dataset were temporarily closed for refurbishment.
+
+## Files
+
+|File Name|Available Formats|
+|---------|-----------------|
+|**sample_submission.csv**|a sample submission file in the correct format (55.25 kb zip)|
+|**store.csv**|supplemental information about the stores (8.33 kb zip)|
+|**test.csv**|historical data excluding Sales (143.25 kb zip)|
+|**train.csv**|historical data including Sales (5.66 mb zip)|
+
+## Data fields
+
+|File Name|Available Formats|
+|---------|-----------------|
+|**Id**|an Id that represents a (Store, Date) duple within the test set|
+|**Store**|a unique Id for each store|
+|**Sales**|the turnover for any given day (this is what you are predicting)|
+|**Customers**|the number of customers on a given day|
+|**Open**|an indicator for whether the store was open: 0 = closed, 1 = open|
+|**StateHoliday**|indicates a state holiday. Normally all stores, with few exceptions, are closed on state holidays. Note that all schools are closed on public holidays and weekends. a = public holiday, b = Easter holiday, c = Christmas, 0 = None|
+|**SchoolHoliday**|indicates if the (Store, Date) was affected by the closure of public schools|
+|**StoreType**|differentiates between 4 different store models: a, b, c, d|
+|**Assortment**: describes an assortment level: a = basic, b = extra, c = extended|
+|**CompetitionDistance**|distance in meters to the nearest competitor store|
+|**CompetitionOpenSince[Month/Year]**|gives the approximate year and month of the time the nearest competitor was opened|
+|**Promo**|indicates whether a store is running a promo on that day|
+|**Promo2**|Promo2 is a continuing and consecutive promotion for some stores: 0 = store is not participating, 1 = store is participating|
+|**Promo2Since[Year/Week]**|describes the year and calendar week when the store started participating in Promo2|
+|**PromoInterval**|describes the consecutive intervals Promo2 is started, naming the months the promotion is started anew. E.g. "Feb,May,Aug,Nov" means each round starts in February, May, August, November of any given year for that store|
 
 # Data Preparation & Environment Setup
 
-Loading in the given data files.
+Preload R packages for further usage.
 
-```{r cache=TRUE}
-unzip("train.csv.zip")
-train_dataset <- read.csv("train.csv")
-
-unzip("test.csv.zip")
-test_dataset <- read.csv("test.csv")
-
-unzip("store.csv.zip")
-store_dataset <- read.csv("store.csv")
-```
-
-Preload useful R packages.
 ```{r}
 library(plyr)
 library(dplyr)
 library(ggplot2)
 ```
 
+Extracting and loading in the given data files.
 
-# Overview of data files
+```{r cache=TRUE}
+#if(file.exists("train.csv")!=TRUE) unzip("train.csv.zip")
+#if(file.exists("test.csv")!=TRUE) unzip("test.csv.zip")
+#if(file.exists("store.csv")!=TRUE) unzip("store.csv.zip")
+
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+store <- read.csv("store.csv")
+```
+
+# Exploratory Data Analyses & Processing
+
+## Overview of datafiles
 
 ```{r}
-str(train_dataset)
-str(store_dataset)
-str(test_dataset)
+str(train)
+str(store)
 ```
+
+Only a particular selection of stores are subject of prediction: 856 of 1115
+
+```{r}
+length(unique(test$Store)) # length(unique(train$Store))
+pred_stores <- distinct(dplyr::select(test, Store))[,1] # list of shops to be predicted
+```
+
+Dates to predict: 2015-08-01 - 2015-09-17
+
+```{r}
+unique(as.Date(test$Date))
+```
+
+My assumption is that a closed store does not generate income. Let's see what is the situation in test dataset: 35093 times stores are open; 5984 times are closed; and 11 times we do not know (NA). Latter case will be treated as closed.
+
+```{r}
+table(test$Open)
+unique(test$Open)
+nrow(test[is.na(test$Open),])
+```
+
+Let's validate on training dataset if my assumption is valid. I calculated total revenue that was generated on those days when particular shops were closed.
+
+```{t}
+sum(train[train$Open==0,]$Sales)
+```
+
+Since they do not make sales when they are closed, prediction will be quite straightforward for those days. Also, I will exclude closed occassions from training dataset when building the prediction model. Also, I checked what is happening on state & school holidays. 
+
+```{r}
+unique(test$StateHoliday)
+table(test$StateHoliday)
+```
+
+180 times I am observing public holiday (a) in the forecasting period. Other type of holidays do not present in this time frame so I will exclude these cases from training set, too.
+
+```{t}
+unique(test$SchoolHoliday)
+table(test$SchoolHoliday)[2]
+```
+
+Regarding school holidays, I did not observed any speciality, however, the vast majority, `r round(table(test$SchoolHoliday)[2]/table(test$SchoolHoliday)[1]*100,2)`% of prediction period falls on school holiday.
+
+## Merge train & store datasets and data cleaning
+
+```{r}
+src1 <- left_join(train, store, by="Store") %>% # join training & store datasets
+
+        filter(Open==1) %>% # filter out closed days (as they generate 0 sales)
+        filter(Store %in% pred_stores) %>% # filter out unpredictable shops
+
+        mutate(Date=as.Date(Date), # convert Date from factor to date format
+               Month=format(Date, "%b")) %>%  
+        mutate(CompSinceDate=as.Date(paste(CompetitionOpenSinceYear,CompetitionOpenSinceMonth,"1",sep = "-")), ## combine CompetitionOpenSinceMonth and CompetitionOpenSinceYear fields, convert to date
+               Days=as.numeric(Date-(CompSinceDate-1)), # calculate days between
+               CompForDays=ifelse(is.na(Days)==TRUE,0,ifelse(Days<0,0,Days)) # replace negative numbers to zero
+               ) %>% 
+        mutate(Promo2SinceDate=as.Date(paste(Promo2SinceYear,Promo2SinceWeek,"1",sep = " "),format = "%Y %U %u")) %>%
+        dplyr::select(-Open, 
+                      -CompetitionOpenSinceMonth, 
+                      -CompetitionOpenSinceYear, 
+                      -Days,
+                      -Promo2SinceWeek,
+                      -Promo2SinceYear)   # remove unused columns
+
+head(
+  filter(src1,is.na((Date-(CompSinceDate-1)))==TRUE)
+)
+
+head(
+as.Date(paste(src1$Promo2SinceYear,src1$Promo2SinceWeek,"1",sep = " "),format = "%Y %U %u"))
+
+head(
+paste(src1$Promo2SinceYear,src1$Promo2SinceWeek,"1",sep = " ")
+    )
+
+strftime("2011-04-03",format="%W")
+```
+
+store <- mutate(store, CompSinceCalc = as.Date(
+  
+
+  
 
 
