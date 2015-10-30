@@ -50,6 +50,7 @@ Preload R packages for further usage.
 library(plyr)
 library(dplyr)
 library(ggplot2)
+library(stringi)
 ```
 
 Extracting and loading in the given data files.
@@ -84,9 +85,10 @@ Dates to predict: 2015-08-01 - 2015-09-17
 
 ```{r}
 unique(as.Date(test$Date))
+pred_dates <- as.character(format(unique(as.Date(test$Date)), "%m %d"))
 ```
 
-My assumption is that a closed store does not generate income. Let's see what is the situation in test dataset: 35093 times stores are open; 5984 times are closed; and 11 times we do not know (NA). Latter case will be treated as closed.
+My assumption is that a closed store does not generate income. Let's see what is the situation in test dataset: 35093 times stores are open; 5984 times are closed; and 11 times we do not know (NA).
 
 ```{r}
 table(test$Open)
@@ -119,42 +121,56 @@ Regarding school holidays, I did not observed any speciality, however, the vast 
 ## Merge train & store datasets and data cleaning
 
 ```{r}
-src1 <- left_join(train, store, by="Store") %>% # join training & store datasets
+proc_src <- left_join(train, store, by = "Store") %>% # join training & store datasets
 
-        filter(Open==1) %>% # filter out closed days (as they generate 0 sales)
-        filter(Store %in% pred_stores) %>% # filter out unpredictable shops
+            filter(Store %in% pred_stores) %>% # filter out unpredictable shops
+            filter(as.character(format(as.Date(Date), "%m %d")) %in% pred_dates) %>% # filter for dates 1 Aug to 17 Sep
+            filter(Open==1) %>% # filter out closed days (as they generate 0 sales)
+    
+            mutate(
+                   Weekend = as.factor(ifelse(DayOfWeek>=6,1,0)), # create weekend indicator
+                   Date = as.Date(Date), # convert Date from factor to date format
+                   Month = format(Date, "%b"), # get month name
+                   CompSinceDate = as.Date(
+                                          paste(CompetitionOpenSinceYear,
+                                                CompetitionOpenSinceMonth,
+                                                "1",
+                                                sep = "-")
+                                          ), # combine CompetitionOpenSinceMonth and 
+                                             # CompetitionOpenSinceYear fields
+                   Days = as.numeric(Date-(CompSinceDate-1)), # calc competition length
+                   CompForDays = ifelse(is.na(Days)==TRUE,0,
+                                        ifelse(Days<0,0,
+                                               Days)
+                                        ), # replace negative numbers to zero
+                   Promo2SinceDate = as.Date(
+                                            paste(Promo2SinceYear,
+                                                  Promo2SinceWeek,
+                                                  "1",
+                                                  sep = " "),format = "%Y %U %u"
+                                            ), # combine Promo2SinceYear & Promo2SinceWeek
+                   Promo2Valid = revalue(
+                                         as.factor(
+                                                  stri_detect(str = as.character(PromoInterval), 
+                                                              fixed = Month) &
+                                                  Promo2SinceDate<=Date
+                                                  )
+                                         ,c("TRUE"=1,"FALSE"=0)
+                                         ), # create Promo2Valid indicator
+                   DayOfWeek = as.factor(DayOfWeek), # convert to factor
+                   Promo = as.factor(Promo), # convert to factor
+                   SchoolHoliday = as.factor(SchoolHoliday), # convert to factor
+                   Promo2 = as.factor(Promo2) # convert to factor
+                   ) %>%  
+            dplyr::select(-Open, 
+                          -CompetitionOpenSinceMonth, 
+                          -CompetitionOpenSinceYear, 
+                          -CompSinceDate,
+                          -Month,
+                          -Days,
+                          -Promo2SinceWeek,
+                          -Promo2SinceYear,
+                          -PromoInterval,
+                          -Promo2SinceDate)   # remove unused columns
 
-        mutate(Date=as.Date(Date), # convert Date from factor to date format
-               Month=format(Date, "%b")) %>%  
-        mutate(CompSinceDate=as.Date(paste(CompetitionOpenSinceYear,CompetitionOpenSinceMonth,"1",sep = "-")), ## combine CompetitionOpenSinceMonth and CompetitionOpenSinceYear fields, convert to date
-               Days=as.numeric(Date-(CompSinceDate-1)), # calculate days between
-               CompForDays=ifelse(is.na(Days)==TRUE,0,ifelse(Days<0,0,Days)) # replace negative numbers to zero
-               ) %>% 
-        mutate(Promo2SinceDate=as.Date(paste(Promo2SinceYear,Promo2SinceWeek,"1",sep = " "),format = "%Y %U %u")) %>%
-        dplyr::select(-Open, 
-                      -CompetitionOpenSinceMonth, 
-                      -CompetitionOpenSinceYear, 
-                      -Days,
-                      -Promo2SinceWeek,
-                      -Promo2SinceYear)   # remove unused columns
-
-head(
-  filter(src1,is.na((Date-(CompSinceDate-1)))==TRUE)
-)
-
-head(
-as.Date(paste(src1$Promo2SinceYear,src1$Promo2SinceWeek,"1",sep = " "),format = "%Y %U %u"))
-
-head(
-paste(src1$Promo2SinceYear,src1$Promo2SinceWeek,"1",sep = " ")
-    )
-
-strftime("2011-04-03",format="%W")
 ```
-
-store <- mutate(store, CompSinceCalc = as.Date(
-  
-
-  
-
-
