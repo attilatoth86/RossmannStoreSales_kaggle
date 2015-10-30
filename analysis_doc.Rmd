@@ -65,7 +65,7 @@ test <- read.csv("test.csv")
 store <- read.csv("store.csv")
 ```
 
-# Exploratory Data Analyses & Processing
+# Data Processing & Exploratory Data Analyses
 
 ## Overview of datafiles
 
@@ -173,4 +173,70 @@ proc_src <- left_join(train, store, by = "Store") %>% # join training & store da
                           -PromoInterval,
                           -Promo2SinceDate)   # remove unused columns
 
+
 ```
+
+# Overview of Sales variable
+```{r}
+summary(proc_src$Sales)
+ggplot(proc_src, aes(x=Sales)) + geom_histogram()
+
+ggplot(proc_src, aes(x=DayOfWeek, y=Sales)) + 
+  geom_boxplot()
+```
+
+# Overview of customers
+```{r}
+ggplot(proc_src, aes(x=Customers)) + geom_histogram()
+
+ggplot(proc_src, aes(x=DayOfWeek, y=Customers)) + 
+  geom_boxplot()
+```
+
+# Sales vs Customers
+```{r}
+ggplot(proc_src, aes(x=Customers, y=Sales, colour=StoreType)) + geom_point(alpha=0.5)
+ggplot(proc_src, aes(x=Customers, y=Sales)) + geom_point(alpha=0.5) + facet_wrap(~ StoreType, ncol=2)
+ggplot(proc_src, aes(x=Customers, y=Sales, colour=Assortment)) + geom_point(alpha=0.5)
+
+```
+
+
+# 
+```{r}
+tmpAvgSalesPerDate <- proc_src %>% 
+                      group_by(Store, MonthDay = format(Date, "%m %d")) %>% 
+                      summarise(AvgSalesPerDate = mean(Sales))
+
+tmpAvgSalesPerWeekDayMonth <- proc_src %>% 
+                              group_by(Store, DayOfWeek, Month = format(Date, "%m")) %>% 
+                              summarise(AvgSalesPerWeekDayMonth = mean(Sales))
+
+proc_src1 <- proc_src %>% mutate(MonthDay = format(Date, "%m %d"),
+                                 Month = format(Date, "%m")
+                                 )
+proc_src2 <- left_join(proc_src1, tmpAvgSalesPerDate, by = c("Store"="Store", "MonthDay" = "MonthDay"))
+proc_src3 <- left_join(proc_src2, tmpAvgSalesPerWeekDayMonth, by = c("Store"="Store", "DayOfWeek" = "DayOfWeek", "Month" = "Month"))
+
+head(proc_src3)
+
+
+ggplot(proc_src3, aes(x=AvgSalesPerDate, y=Sales)) + geom_point()
+
+summary(lm(Sales ~ AvgSalesPerDate, proc_src3))
+summary(lm(Sales ~ AvgSalesPerDate+Promo, proc_src3))
+summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid, proc_src3))
+summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid+SchoolHoliday, proc_src3))
+
+ggplot(proc_src3, aes(x=Promo, y=Sales)) + geom_point()
+
+anova(
+lm(Sales ~ AvgSalesPerDate, proc_src3),
+lm(Sales ~ AvgSalesPerDate+Promo, proc_src3)
+)
+
+summary(lm(Sales ~ AvgSalesPerWeekDayMonth, proc_src3))
+summary(lm(Sales ~ Customers, proc_src3))
+```
+
+
