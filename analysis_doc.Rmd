@@ -34,7 +34,7 @@ You are provided with historical sales data for 1,115 Rossmann stores. The task 
 |**StateHoliday**|indicates a state holiday. Normally all stores, with few exceptions, are closed on state holidays. Note that all schools are closed on public holidays and weekends. a = public holiday, b = Easter holiday, c = Christmas, 0 = None|
 |**SchoolHoliday**|indicates if the (Store, Date) was affected by the closure of public schools|
 |**StoreType**|differentiates between 4 different store models: a, b, c, d|
-|**Assortment**: describes an assortment level: a = basic, b = extra, c = extended|
+|**Assortment**|describes an assortment level: a = basic, b = extra, c = extended|
 |**CompetitionDistance**|distance in meters to the nearest competitor store|
 |**CompetitionOpenSince[Month/Year]**|gives the approximate year and month of the time the nearest competitor was opened|
 |**Promo**|indicates whether a store is running a promo on that day|
@@ -56,9 +56,9 @@ library(stringi)
 Extracting and loading in the given data files.
 
 ```{r cache=TRUE}
-#if(file.exists("train.csv")!=TRUE) unzip("train.csv.zip")
-#if(file.exists("test.csv")!=TRUE) unzip("test.csv.zip")
-#if(file.exists("store.csv")!=TRUE) unzip("store.csv.zip")
+if(file.exists("train.csv")!=TRUE) unzip("train.csv.zip")
+if(file.exists("test.csv")!=TRUE) unzip("test.csv.zip")
+if(file.exists("store.csv")!=TRUE) unzip("store.csv.zip")
 
 train <- read.csv("train.csv")
 test <- read.csv("test.csv")
@@ -72,6 +72,7 @@ store <- read.csv("store.csv")
 ```{r}
 str(train)
 str(store)
+str(test)
 ```
 
 Only a particular selection of stores are subject of prediction: 856 of 1115
@@ -98,7 +99,7 @@ nrow(test[is.na(test$Open),])
 
 Let's validate on training dataset if my assumption is valid. I calculated total revenue that was generated on those days when particular shops were closed.
 
-```{t}
+```{r}
 sum(train[train$Open==0,]$Sales)
 ```
 
@@ -111,7 +112,7 @@ table(test$StateHoliday)
 
 180 times I am observing public holiday (a) in the forecasting period. Other type of holidays do not present in this time frame so I will exclude these cases from training set, too.
 
-```{t}
+```{r}
 unique(test$SchoolHoliday)
 table(test$SchoolHoliday)[2]
 ```
@@ -172,8 +173,6 @@ proc_src <- left_join(train, store, by = "Store") %>% # join training & store da
                           -Promo2SinceYear,
                           -PromoInterval,
                           -Promo2SinceDate)   # remove unused columns
-
-
 ```
 
 # Overview of Sales variable
@@ -237,6 +236,13 @@ lm(Sales ~ AvgSalesPerDate+Promo, proc_src3)
 
 summary(lm(Sales ~ AvgSalesPerWeekDayMonth, proc_src3))
 summary(lm(Sales ~ Customers, proc_src3))
+
+ggplot(train, aes(x=Date, y=Sales)) + geom_point()
+
+ggplot(
+    aggregate(proc_src$Sales, list(Date=proc_src$Date, StoreType=proc_src$StoreType), sum),
+    aes(x=Date, y=x)
+    ) + geom_line()
 ```
 
 
