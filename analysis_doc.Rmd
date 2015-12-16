@@ -2,16 +2,28 @@
 title: "Forecast sales using store, promotion, and competitor data"
 output: html_document
 ---
-
+  
 # The Challenge
+  
+Rossmann operates over 3,000 drug stores in 7 European countries. Currently, 
+Rossmann store managers are tasked with predicting their daily sales for up to 
+six weeks in advance. Store sales are influenced by many factors, including 
+promotions, competition, school and state holidays, seasonality, and locality. 
+With thousands of individual managers predicting sales based on their unique 
+circumstances, the accuracy of results can be quite varied.
 
-Rossmann operates over 3,000 drug stores in 7 European countries. Currently, Rossmann store managers are tasked with predicting their daily sales for up to six weeks in advance. Store sales are influenced by many factors, including promotions, competition, school and state holidays, seasonality, and locality. With thousands of individual managers predicting sales based on their unique circumstances, the accuracy of results can be quite varied.
-
-In their first Kaggle competition, Rossmann is challenging you to predict 6 weeks of daily sales for 1,115 stores located across Germany. Reliable sales forecasts enable store managers to create effective staff schedules that increase productivity and motivation. By helping Rossmann create a robust prediction model, you will help store managers stay focused on what’s most important to them: their customers and their teams! 
-
+In their first Kaggle competition, Rossmann is challenging you to predict 6 
+weeks of daily sales for 1,115 stores located across Germany. Reliable sales 
+forecasts enable store managers to create effective staff schedules that 
+increase productivity and motivation. By helping Rossmann create a robust 
+prediction model, you will help store managers stay focused on what's most 
+important to them: their customers and their teams!
+  
 # Data
-
-You are provided with historical sales data for 1,115 Rossmann stores. The task is to forecast the "Sales" column for the test set. Note that some stores in the dataset were temporarily closed for refurbishment.
+  
+I was provided with historical sales data for 1,115 Rossmann stores. The task is 
+to forecast the "Sales" column for the test set. Note that some stores in the 
+dataset were temporarily closed for refurbishment.
 
 ## Files
 
@@ -21,9 +33,9 @@ You are provided with historical sales data for 1,115 Rossmann stores. The task 
 |**store.csv**|supplemental information about the stores (8.33 kb zip)|
 |**test.csv**|historical data excluding Sales (143.25 kb zip)|
 |**train.csv**|historical data including Sales (5.66 mb zip)|
-
+  
 ## Data fields
-
+  
 |File Name|Available Formats|
 |---------|-----------------|
 |**Id**|an Id that represents a (Store, Date) duple within the test set|
@@ -31,19 +43,28 @@ You are provided with historical sales data for 1,115 Rossmann stores. The task 
 |**Sales**|the turnover for any given day (this is what you are predicting)|
 |**Customers**|the number of customers on a given day|
 |**Open**|an indicator for whether the store was open: 0 = closed, 1 = open|
-|**StateHoliday**|indicates a state holiday. Normally all stores, with few exceptions, are closed on state holidays. Note that all schools are closed on public holidays and weekends. a = public holiday, b = Easter holiday, c = Christmas, 0 = None|
-|**SchoolHoliday**|indicates if the (Store, Date) was affected by the closure of public schools|
+|**StateHoliday**|indicates a state holiday. Normally all stores, with few 
+exceptions, are closed on state holidays. Note that all schools are closed on 
+public holidays and weekends. a = public holiday, b = Easter holiday, 
+c = Christmas, 0 = None|
+|**SchoolHoliday**|indicates if the (Store, Date) was affected by the closure of 
+public schools|
 |**StoreType**|differentiates between 4 different store models: a, b, c, d|
 |**Assortment**|describes an assortment level: a = basic, b = extra, c = extended|
 |**CompetitionDistance**|distance in meters to the nearest competitor store|
-|**CompetitionOpenSince[Month/Year]**|gives the approximate year and month of the time the nearest competitor was opened|
+|**CompetitionOpenSince[Month/Year]**|gives the approximate year and month of 
+the time the nearest competitor was opened|
 |**Promo**|indicates whether a store is running a promo on that day|
-|**Promo2**|Promo2 is a continuing and consecutive promotion for some stores: 0 = store is not participating, 1 = store is participating|
-|**Promo2Since[Year/Week]**|describes the year and calendar week when the store started participating in Promo2|
-|**PromoInterval**|describes the consecutive intervals Promo2 is started, naming the months the promotion is started anew. E.g. "Feb,May,Aug,Nov" means each round starts in February, May, August, November of any given year for that store|
-
+|**Promo2**|Promo2 is a continuing and consecutive promotion for some stores: 
+0 = store is not participating, 1 = store is participating|
+|**Promo2Since[Year/Week]**|describes the year and calendar week when the store 
+started participating in Promo2|
+|**PromoInterval**|describes the consecutive intervals Promo2 is started, naming 
+the months the promotion is started anew. E.g. "Feb,May,Aug,Nov" means each 
+round starts in February, May, August, November of any given year for that store|
+  
 # Data Preparation & Environment Setup
-
+  
 Preload R packages for further usage.
 
 ```{r}
@@ -51,6 +72,8 @@ library(plyr)
 library(dplyr)
 library(ggplot2)
 library(stringi)
+library(caret)
+library(doParallel)
 ```
 
 Extracting and loading in the given data files.
@@ -78,18 +101,21 @@ str(test)
 Only a particular selection of stores are subject of prediction: 856 of 1115
 
 ```{r}
-length(unique(test$Store)) # length(unique(train$Store))
+length(unique(test$Store)) # unique store IDs in test set
+length(unique(train$Store)) # unique store IDs in training set
 pred_stores <- distinct(dplyr::select(test, Store))[,1] # list of shops to be predicted
 ```
 
 Dates to predict: 2015-08-01 - 2015-09-17
 
 ```{r}
-unique(as.Date(test$Date))
-pred_dates <- as.character(format(unique(as.Date(test$Date)), "%m %d"))
+unique(as.Date(test$Date)) # dates to predict
+pred_dates <- as.character(format(unique(as.Date(test$Date)), "%m %d")) # dates to predict in MM DD format
 ```
 
-My assumption is that a closed store does not generate income. Let's see what is the situation in test dataset: 35093 times stores are open; 5984 times are closed; and 11 times we do not know (NA).
+My assumption is that a closed store does not generate income. Let's see what is 
+the situation in test dataset: 35093 times stores are open; 5984 times are 
+closed; and 11 times we do not know (NA).
 
 ```{r}
 table(test$Open)
@@ -97,82 +123,100 @@ unique(test$Open)
 nrow(test[is.na(test$Open),])
 ```
 
-Let's validate on training dataset if my assumption is valid. I calculated total revenue that was generated on those days when particular shops were closed.
+Let's validate on training dataset if my assumption is valid. I calculated total 
+revenue that was generated on those days when particular shops were closed.
 
 ```{r}
 sum(train[train$Open==0,]$Sales)
 ```
 
-Since they do not make sales when they are closed, prediction will be quite straightforward for those days. Also, I will exclude closed occassions from training dataset when building the prediction model. Also, I checked what is happening on state & school holidays. 
+Since they do not make sales when they are closed, prediction will be quite 
+straightforward for those days. Also, I checked what is happening on state & 
+school holidays.
 
 ```{r}
 unique(test$StateHoliday)
 table(test$StateHoliday)
 ```
 
-180 times I am observing public holiday (a) in the forecasting period. Other type of holidays do not present in this time frame so I will exclude these cases from training set, too.
+180 times I am observing public holiday (a) in the forecasting period. Other 
+type of holidays do not present in this time frame.
 
 ```{r}
 unique(test$SchoolHoliday)
 table(test$SchoolHoliday)[2]
 ```
 
-Regarding school holidays, I did not observed any speciality, however, the vast majority, `r round(table(test$SchoolHoliday)[2]/table(test$SchoolHoliday)[1]*100,2)`% of prediction period falls on school holiday.
+Regarding school holidays, I did not observed any speciality, however, the vast 
+majority, `r round(table(test$SchoolHoliday)[2]/table(test$SchoolHoliday)[1]*100,2)`% 
+of prediction period falls on school holiday.
 
 ## Merge train & store datasets and data cleaning
 
 ```{r}
 proc_src <- left_join(train, store, by = "Store") %>% # join training & store datasets
+   
+ #  filter(Store %in% pred_stores) %>% # filter out unpredictable shops
+ #  filter(as.character(format(as.Date(Date), "%m %d")) %in% pred_dates) %>% # filter for dates 1 Aug to 17 Sep
+   filter(Open==1) %>% # filter out closed days (as they certainly generate 0 sales)
+   
+   mutate(
+     LogSales = log(Sales), # natural log of Sales variable
 
-            filter(Store %in% pred_stores) %>% # filter out unpredictable shops
-            filter(as.character(format(as.Date(Date), "%m %d")) %in% pred_dates) %>% # filter for dates 1 Aug to 17 Sep
-            filter(Open==1) %>% # filter out closed days (as they generate 0 sales)
-    
-            mutate(
-                   Weekend = as.factor(ifelse(DayOfWeek>=6,1,0)), # create weekend indicator
-                   Date = as.Date(Date), # convert Date from factor to date format
-                   Month = format(Date, "%b"), # get month name
-                   CompSinceDate = as.Date(
-                                          paste(CompetitionOpenSinceYear,
-                                                CompetitionOpenSinceMonth,
-                                                "1",
-                                                sep = "-")
-                                          ), # combine CompetitionOpenSinceMonth and 
-                                             # CompetitionOpenSinceYear fields
-                   Days = as.numeric(Date-(CompSinceDate-1)), # calc competition length
-                   CompForDays = ifelse(is.na(Days)==TRUE,0,
-                                        ifelse(Days<0,0,
-                                               Days)
-                                        ), # replace negative numbers to zero
-                   Promo2SinceDate = as.Date(
-                                            paste(Promo2SinceYear,
-                                                  Promo2SinceWeek,
-                                                  "1",
-                                                  sep = " "),format = "%Y %U %u"
-                                            ), # combine Promo2SinceYear & Promo2SinceWeek
-                   Promo2Valid = revalue(
-                                         as.factor(
-                                                  stri_detect(str = as.character(PromoInterval), 
-                                                              fixed = Month) &
-                                                  Promo2SinceDate<=Date
-                                                  )
-                                         ,c("TRUE"=1,"FALSE"=0)
-                                         ), # create Promo2Valid indicator
-                   DayOfWeek = as.factor(DayOfWeek), # convert to factor
-                   Promo = as.factor(Promo), # convert to factor
-                   SchoolHoliday = as.factor(SchoolHoliday), # convert to factor
-                   Promo2 = as.factor(Promo2) # convert to factor
-                   ) %>%  
-            dplyr::select(-Open, 
-                          -CompetitionOpenSinceMonth, 
-                          -CompetitionOpenSinceYear, 
-                          -CompSinceDate,
-                          -Month,
-                          -Days,
-                          -Promo2SinceWeek,
-                          -Promo2SinceYear,
-                          -PromoInterval,
-                          -Promo2SinceDate)   # remove unused columns
+     Store = as.factor(Store), # convert Store variable to factor
+     Open = as.factor(Open), # convert Open variable to factor
+     DayOfWeek = as.factor(DayOfWeek), # convert to factor
+     Promo = as.factor(Promo), # convert to factor
+     SchoolHoliday = as.factor(SchoolHoliday), # convert to factor
+     Promo2 = as.factor(Promo2), # convert to factor
+     
+     Date = as.Date(Date), # convert Date from factor to date format
+     Year = as.numeric(format(Date, "%y")), # get year
+     Month = as.numeric(format(Date, "%m")), # get month
+     MonthName = as.factor(format(Date, "%b")), # get month name
+     Day = as.numeric(format(Date, "%d")), # get day
+     Weekend = as.factor(ifelse(as.numeric(as.character(DayOfWeek))>=6,1,0)), # create weekend indicator
+     
+     CompSinceDate = as.Date(
+       paste(CompetitionOpenSinceYear,
+             CompetitionOpenSinceMonth,
+             "1",
+             sep = "-")
+     ), # combine CompetitionOpenSinceMonth and 
+     # CompetitionOpenSinceYear fields
+     Days = as.numeric(Date-(CompSinceDate-1)), # calc competition length
+     CompForDays = ifelse(is.na(Days)==TRUE,0,
+                          ifelse(Days<0,0,
+                                 Days)
+     ), # replace negative numbers to zero
+     
+     Promo2SinceDate = as.Date(
+       paste(Promo2SinceYear,
+             Promo2SinceWeek,
+             "1",
+             sep = " "),format = "%Y %U %u"
+     ), # combine Promo2SinceYear & Promo2SinceWeek
+     Promo2Valid = revalue(
+       as.factor(
+         stri_detect(str = as.character(PromoInterval), 
+                     fixed = MonthName) &
+           Promo2SinceDate<=Date
+       )
+       ,c("TRUE"=1,"FALSE"=0)
+     ) # create Promo2Valid indicator
+   ) %>%  
+   dplyr::select(-CompetitionOpenSinceMonth, 
+                 -CompetitionOpenSinceYear, 
+                 -CompSinceDate,
+                 -Date,
+                 -MonthName,
+                 -Promo2SinceWeek,
+                 -Promo2SinceYear,
+                 -PromoInterval,
+                 -Promo2SinceDate,
+                 -Customers,
+                 -Days,
+                 -Open)   # remove unused columns
 ```
 
 # Overview of Sales variable
@@ -180,69 +224,92 @@ proc_src <- left_join(train, store, by = "Store") %>% # join training & store da
 summary(proc_src$Sales)
 ggplot(proc_src, aes(x=Sales)) + geom_histogram()
 
+summary(proc_src$LogSales)
+ggplot(proc_src, aes(x=LogSales)) + geom_histogram()
+
 ggplot(proc_src, aes(x=DayOfWeek, y=Sales)) + 
   geom_boxplot()
 ```
 
+```{r}
+intrain <- createDataPartition(y = proc_src$LogSales, p=0.75, list=FALSE)
+rmtrain <- proc_src[intrain,]
+rmtest <- proc_src[-intrain,]
+
+sapply(rmtrain[,sapply(rmtrain,is.factor)],levels)
+
+# Make use of process parallelization
+registerDoParallel(makeCluster(detectCores()))
+
+
+mdl <- train(LogSales~DayOfWeek+Open+Promo+StateHoliday+SchoolHoliday+StoreType+
+               Assortment+CompetitionDistance+Promo2+Year+Month+Day+Weekend+CompForDays+Promo2Valid,
+             data=rmtrain, 
+             method = "rf", 
+             trControl = trainControl(method = "cv", number = 3, allowParallel = TRUE)
+             )
+mdl
+mdl$finalModel
+```
+
 # Overview of customers
 ```{r}
-ggplot(proc_src, aes(x=Customers)) + geom_histogram()
+#ggplot(proc_src, aes(x=Customers)) + geom_histogram()
 
-ggplot(proc_src, aes(x=DayOfWeek, y=Customers)) + 
-  geom_boxplot()
+#ggplot(proc_src, aes(x=DayOfWeek, y=Customers)) + 
+#  geom_boxplot()
 ```
 
 # Sales vs Customers
 ```{r}
-ggplot(proc_src, aes(x=Customers, y=Sales, colour=StoreType)) + geom_point(alpha=0.5)
-ggplot(proc_src, aes(x=Customers, y=Sales)) + geom_point(alpha=0.5) + facet_wrap(~ StoreType, ncol=2)
-ggplot(proc_src, aes(x=Customers, y=Sales, colour=Assortment)) + geom_point(alpha=0.5)
-
+#ggplot(proc_src, aes(x=Customers, y=Sales, colour=StoreType)) + geom_point(alpha=0.5)
+#ggplot(proc_src, aes(x=Customers, y=Sales)) + geom_point(alpha=0.5) + facet_wrap(~ StoreType, ncol=2)
+#ggplot(proc_src, aes(x=Customers, y=Sales, colour=Assortment)) + geom_point(alpha=0.5)
 ```
 
 
 # 
 ```{r}
-tmpAvgSalesPerDate <- proc_src %>% 
-                      group_by(Store, MonthDay = format(Date, "%m %d")) %>% 
-                      summarise(AvgSalesPerDate = mean(Sales))
+#tmpAvgSalesPerDate <- proc_src %>% 
+#  group_by(Store, MonthDay = format(Date, "%m %d")) %>% 
+#  summarise(AvgSalesPerDate = mean(Sales))
 
-tmpAvgSalesPerWeekDayMonth <- proc_src %>% 
-                              group_by(Store, DayOfWeek, Month = format(Date, "%m")) %>% 
-                              summarise(AvgSalesPerWeekDayMonth = mean(Sales))
+#tmpAvgSalesPerWeekDayMonth <- proc_src %>% 
+#  group_by(Store, DayOfWeek, Month = format(Date, "%m")) %>% 
+#  summarise(AvgSalesPerWeekDayMonth = mean(Sales))
 
-proc_src1 <- proc_src %>% mutate(MonthDay = format(Date, "%m %d"),
-                                 Month = format(Date, "%m")
-                                 )
-proc_src2 <- left_join(proc_src1, tmpAvgSalesPerDate, by = c("Store"="Store", "MonthDay" = "MonthDay"))
-proc_src3 <- left_join(proc_src2, tmpAvgSalesPerWeekDayMonth, by = c("Store"="Store", "DayOfWeek" = "DayOfWeek", "Month" = "Month"))
+#proc_src1 <- proc_src %>% mutate(MonthDay = format(Date, "%m %d"),
+#                                 Month = format(Date, "%m")
+#)
+#proc_src2 <- left_join(proc_src1, tmpAvgSalesPerDate, by = c("Store"="Store", "MonthDay" = "MonthDay"))
+#proc_src3 <- left_join(proc_src2, tmpAvgSalesPerWeekDayMonth, by = c("Store"="Store", "DayOfWeek" = "DayOfWeek", "Month" = "Month"))
 
-head(proc_src3)
+#head(proc_src3)
 
 
-ggplot(proc_src3, aes(x=AvgSalesPerDate, y=Sales)) + geom_point()
+#ggplot(proc_src3, aes(x=AvgSalesPerDate, y=Sales)) + geom_point()
 
-summary(lm(Sales ~ AvgSalesPerDate, proc_src3))
-summary(lm(Sales ~ AvgSalesPerDate+Promo, proc_src3))
-summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid, proc_src3))
-summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid+SchoolHoliday, proc_src3))
+#summary(lm(Sales ~ AvgSalesPerDate, proc_src3))
+#summary(lm(Sales ~ AvgSalesPerDate+Promo, proc_src3))
+#summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid, proc_src3))
+#summary(lm(Sales ~ AvgSalesPerDate+Promo+Promo2Valid+SchoolHoliday, proc_src3))
 
-ggplot(proc_src3, aes(x=Promo, y=Sales)) + geom_point()
+#ggplot(proc_src3, aes(x=Promo, y=Sales)) + geom_point()
 
-anova(
-lm(Sales ~ AvgSalesPerDate, proc_src3),
-lm(Sales ~ AvgSalesPerDate+Promo, proc_src3)
-)
+#anova(
+#  lm(Sales ~ AvgSalesPerDate, proc_src3),
+#  lm(Sales ~ AvgSalesPerDate+Promo, proc_src3)
+#)
 
-summary(lm(Sales ~ AvgSalesPerWeekDayMonth, proc_src3))
-summary(lm(Sales ~ Customers, proc_src3))
+#summary(lm(Sales ~ AvgSalesPerWeekDayMonth, proc_src3))
+#summary(lm(Sales ~ Customers, proc_src3))
 
-ggplot(train, aes(x=Date, y=Sales)) + geom_point()
+#ggplot(train, aes(x=Date, y=Sales)) + geom_point()
 
-ggplot(
-    aggregate(proc_src$Sales, list(Date=proc_src$Date, StoreType=proc_src$StoreType), sum),
-    aes(x=Date, y=x)
-    ) + geom_line()
+#ggplot(
+#  aggregate(proc_src$Sales, list(Date=proc_src$Date, StoreType=proc_src$StoreType), sum),
+#  aes(x=Date, y=x)
+#) + geom_line()
 ```
 
 
